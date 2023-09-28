@@ -1,2 +1,5 @@
 config.py
 .venv
+data.json
+__pycache__
+newsdata.json
