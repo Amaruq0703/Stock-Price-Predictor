@@ -1,10 +1,11 @@
 import requests
-from config import APIkey
+from config import APIkey, newsAPI
 import numpy as np
 import pandas as pd
 from sklearn import linear_model
 from sklearn.model_selection import train_test_split
-
+import datetime as dt
+import matplotlib.pyplot as plt
 
 symbol = input('Enter Stock Ticker: ')
 
@@ -16,11 +17,14 @@ class StockData:
         r=requests.get(url)
         self.data = r.json()
         self.stockdate = self.data['Time Series (60min)']
-
-        urlnews = f'https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers={symbol}&limit=1000&apikey={APIkey}'
+        
+        date = dt.date.today()
+        days_before = (dt.date.today()-dt.timedelta(days=30))   
+        urlnews = f'https://eodhd.com/api/sentiments?s={symbol}&from={days_before}&to={date}&&api_token={newsAPI}'
         rnews = requests.get(urlnews)
         self.datanews = rnews.json()
         
+
 # Creating stock price indicators 
 
 class FeatureEngineering(StockData):
@@ -60,18 +64,13 @@ class FeatureEngineering(StockData):
 
         #Getting Sentiment value from API
         self.df = feature.RSI()
-        newsdata = self.datanews['feed']
-        newstickers = [i.get('ticker_sentiment') for i in newsdata]
-        for i in newstickers:
-            newstickerlist = [list(l.values()) for l in i]
-        tickersentidict = {x[0]:x[2] for x in newstickerlist}
+        newsdata = self.datanews[f'{symbol}.US']
+        newsdates = [i.get('date') for i in newsdata]
+        senti = [i.get('normalized') for i in newsdata]
 
-        #Storing Sentiment value in dataframe
-        if symbol in tickersentidict.keys():
-            self.df['News Senti'] = tickersentidict[symbol]
-        else:
-            self.df['News Senti'] = 0
-        
+        for i in range(14, 252, 16):
+            self.df.loc[i-14:i, 'News Senti'] = senti[round((i/14)-1)]
+
         return self.df
         
 
@@ -80,11 +79,18 @@ stockdata = StockData(symbol)
 feature = FeatureEngineering(symbol)
 df = feature.news_sentiment(symbol)
 
-x = df['Prices']
-y=['RSI', 'News Senti']
-
-
+df.dropna(inplace=True)
+y = df['Prices']
+x=df[['RSI', 'News Senti']]
+print(len(x))
 # Creating Train and Test split
-X_train, X_test, y_train, y_test = train_test_split(x, y, test_size=0.33)
-print(X_train.shape, X_test.shape, y_train.shape, y_test.shape)
 
+X_train, X_test, y_train, y_test = train_test_split(x, y, test_size=0.20)
+
+model = linear_model.LinearRegression()
+model.fit(x, y)
+
+# Predicting stock price and findin r2 score of model
+predictedprice= model.predict(X_test)
+print(predictedprice)
+print("R2 score =", model.score(x, y))
